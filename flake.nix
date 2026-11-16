@@ -31,5 +31,17 @@
           proton-cachyos-v3 = final.callPackage ./package.nix { variant = "x86_64_v3"; };
         };
       };
+
+      devShells = {
+        ${system} = {
+          default = pkgs.mkShell {
+            packages = with pkgs; [
+              curl
+              jq
+              shellcheck
+            ];
+          };
+        };
+      };
     };
 }
