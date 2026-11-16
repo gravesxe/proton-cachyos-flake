@@ -1,6 +1,6 @@
 # proton-cachyos-flake
 
-(work in progress and made with claude)
+**(work in progress and made with claude)**
 
 [Proton-CachyOS](https://github.com/CachyOS/proton-cachyos) packaged as a Nix flake, for use as a Steam
 compatibility tool on NixOS. A GitHub Action checks for new CachyOS releases every six hours and
