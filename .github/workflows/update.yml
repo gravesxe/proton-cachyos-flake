@@ -8,24 +8,95 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: update
+  cancel-in-progress: false
+
 jobs:
-  update:
+  check:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      updated: ${{ steps.update.outputs.updated }}
+      version: ${{ steps.update.outputs.version }}
+      summary: ${{ steps.update.outputs.summary }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: DeterminateSystems/nix-installer-action@main
 
-      - name: Check for a new release
+      - name: Sync with upstream releases
         id: update
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: ./scripts/update.sh
 
-      - name: Verify both variants build
-        run: nix build .#proton-cachyos .#proton-cachyos-v3 --no-link
+      - name: Keep the new sources for the build and commit jobs
+        if: steps.update.outputs.updated == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sources
+          path: sources.json
+          if-no-files-found: error
+          retention-days: 1
 
-      - name: Commit
+  build:
+    needs: check
+    if: needs.check.outputs.updated == 'true'
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: ubuntu-latest
+            system: x86_64-linux
+          # Native ARM runner: the aarch64 package can't be built on x86_64
+          - os: ubuntu-24.04-arm
+            system: aarch64-linux
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: sources
+          path: .
+
+      - uses: DeterminateSystems/nix-installer-action@main
+
+      # Builds every package of the latest release for this system, whatever variants it has.
+      # Older releases are only hash-pinned; Nix verifies them when someone builds one.
+      - name: Build ${{ matrix.system }} packages
+        env:
+          SYSTEM: ${{ matrix.system }}
         run: |
-          git diff --quiet && exit 0
+          packages=$(nix eval --raw ".#packages.${SYSTEM}" \
+            --apply 'p: builtins.concatStringsSep " " (builtins.filter (n: n != "default") (builtins.attrNames p))')
+          echo "Building: $packages"
+          for package in $packages; do
+            nix build ".#packages.${SYSTEM}.${package}" --no-link --print-build-logs
+          done
+
+  commit:
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: sources
+          path: .
+
+      - name: Commit and push
+        env:
+          SUMMARY: ${{ needs.check.outputs.summary }}
+        run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -am "chore: update proton-cachyos to ${{ steps.update.outputs.version }}"
-          git push
+          git add sources.json
+          git commit -m "chore: ${SUMMARY}"
+          # main may have moved while the builds ran
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"

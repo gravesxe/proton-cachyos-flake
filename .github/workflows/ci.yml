@@ -1,0 +1,33 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@main
+
+      # Evaluates every package (latest and pinned, both systems) without downloading anything
+      - name: Evaluate the flake
+        run: nix flake check --no-build --all-systems
+
+      # flake check doesn't look inside legacyPackages, so evaluate every pinned release too
+      - name: Evaluate every pinned release
+        run: |
+          nix eval --impure --expr '
+            let f = builtins.getFlake (toString ./.); in
+            builtins.mapAttrs (_: s: builtins.length (builtins.concatMap
+              (r: map (d: d.drvPath) (builtins.attrValues r)) (builtins.attrValues s.versions)))
+              f.legacyPackages'
+
+      - name: Lint the update script
+        run: nix run nixpkgs#shellcheck -- scripts/update.sh
