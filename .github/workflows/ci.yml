@@ -12,9 +12,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: DeterminateSystems/nix-installer-action@main
+        with:
+          # Upstream Nix: no FlakeHub login (and no OIDC token needed for it)
+          determinate: false
 
       # Evaluates every package (latest and pinned, both systems) without downloading anything
       - name: Evaluate the flake

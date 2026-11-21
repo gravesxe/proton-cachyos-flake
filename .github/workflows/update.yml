@@ -21,9 +21,12 @@ jobs:
       version: ${{ steps.update.outputs.version }}
       summary: ${{ steps.update.outputs.summary }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: DeterminateSystems/nix-installer-action@main
+        with:
+          # Upstream Nix: no FlakeHub login (and no OIDC token needed for it)
+          determinate: false
 
       - name: Sync with upstream releases
         id: update
@@ -33,7 +36,7 @@ jobs:
 
       - name: Keep the new sources for the build and commit jobs
         if: steps.update.outputs.updated == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sources
           path: sources.json
@@ -55,14 +58,17 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: sources
           path: .
 
       - uses: DeterminateSystems/nix-installer-action@main
+        with:
+          # Upstream Nix: no FlakeHub login (and no OIDC token needed for it)
+          determinate: false
 
       # Builds every package of the latest release for this system, whatever variants it has.
       # Older releases are only hash-pinned; Nix verifies them when someone builds one.
@@ -82,9 +88,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: sources
           path: .
