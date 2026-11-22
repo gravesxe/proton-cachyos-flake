@@ -104,7 +104,9 @@ nixpkgs.overlays = [ inputs.proton-cachyos.overlays.default ];
 programs.steam.extraCompatPackages = [ pkgs.proton-cachyos ];
 ```
 
-The overlay also provides `pkgs.proton-cachyos-versions` (see below).
+The overlay also provides `pkgs.proton-cachyos-versions`, which holds every pinned release for your system,
+keyed by version: `pkgs.proton-cachyos-versions."10.0-sunset-slr".proton-cachyos-v3`. See
+[Pinning an older release](#pinning-an-older-release).
 
 ## Installation on other Linux distributions
 
