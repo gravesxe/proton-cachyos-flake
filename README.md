@@ -106,6 +106,45 @@ programs.steam.extraCompatPackages = [ pkgs.proton-cachyos ];
 
 The overlay also provides `pkgs.proton-cachyos-versions` (see below).
 
+## Installation on other Linux distributions
+
+On a distribution other than NixOS, you don't need to change your system configuration. Install Nix
+(with flakes enabled), build the tool, and link it into Steam's compatibility tools folder.
+
+Enable flakes if you haven't already, by adding this to `~/.config/nix/nix.conf` (or to
+`/etc/nix/nix.conf` on a multi-user install, which needs root):
+
+```ini
+experimental-features = nix-command flakes
+```
+
+Then build the package. `--no-link` avoids creating a `result` symlink, and `--print-out-paths` prints
+the path to the tool:
+
+```fish
+set tool (nix build --no-link --print-out-paths github:gravesxe/proton-cachyos-flake#proton-cachyos.steamcompattool)
+mkdir -p ~/.local/share/Steam/compatibilitytools.d
+ln -sfn $tool ~/.local/share/Steam/compatibilitytools.d/proton-cachyos
+```
+
+On a CPU with x86-64-v3 support, use `proton-cachyos-v3` instead of `proton-cachyos` in both commands,
+for example `#proton-cachyos-v3.steamcompattool` and `.../proton-cachyos-v3`. The v3 build installs as
+its own tool, so you can have both side by side.
+
+Steam only reads `compatibilitytools.d` at startup, so fully restart Steam afterwards. `proton-cachyos`
+then appears in the compatibility dropdown, as described in [Using it in Steam](#using-it-in-steam).
+
+Things to be aware of:
+
+- **Updating.** The link points at the build you made, so it doesn't change on its own. Run the same
+  two commands again to pick up a newer release. Nix fetches the latest version of this flake each time.
+- **Steam from Flatpak.** A Flatpak Steam can't see `/nix/store` unless it is given access. Either
+  install Steam natively, or override the Flatpak's permissions (for example with
+  `flatpak override --user --filesystem=/nix/store com.valvesoftware.Steam`) and link into
+  `~/.var/app/com.valvesoftware.Steam/data/Steam/compatibilitytools.d` instead. This is untested here.
+- **Steam from Snap.** Snap Steam uses its own home directory and may not see the tool. This is untested
+  as well.
+
 ## Pinning an older release
 
 Every upstream release stays available under `legacyPackages`, keyed by its version (the release tag
