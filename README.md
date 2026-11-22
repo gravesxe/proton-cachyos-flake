@@ -1,8 +1,11 @@
 # proton-cachyos-flake
 
 [Proton-CachyOS](https://github.com/CachyOS/proton-cachyos) packaged as a Nix flake, for use as a Steam
-compatibility tool on NixOS. A GitHub Action checks for new CachyOS releases every six hours and
-updates this repository automatically, so you never have to touch a version or a hash.
+compatibility tool on NixOS and other Linux distributions with Nix. It supports `x86_64-linux` and
+`aarch64-linux` only (Proton is a Linux compatibility layer, so there are no macOS or Windows builds).
+
+A GitHub Action checks for new CachyOS releases every six hours and updates this repository
+automatically, so you never have to touch a version or a hash.
 
 This repository contains only the Nix packaging. Nothing from CachyOS is redistributed: the build
 downloads the official release tarball straight from
@@ -96,17 +99,47 @@ Rebuild, **fully restart Steam** (it only looks for compatibility tools at start
 
 ### Using the overlay instead
 
-If you prefer plain package names, apply the overlay and refer to `pkgs.proton-cachyos`:
+This is an alternative to the `configuration.nix` above, not an extra step. An overlay adds this
+flake's packages to your system's `pkgs`, so you can write `pkgs.proton-cachyos` in place of
+`inputs.proton-cachyos.packages.${pkgs.stdenv.hostPlatform.system}.proton-cachyos`. You get the same
+tool either way, so pick whichever reads better in your configuration.
+
+Keep the `flake.nix` from above, and use this `configuration.nix` instead:
 
 ```nix
-nixpkgs.overlays = [ inputs.proton-cachyos.overlays.default ];
+# configuration.nix
+{ pkgs, inputs, ... }:
+{
+  nixpkgs = {
+    overlays = [ inputs.proton-cachyos.overlays.default ];
+  };
 
-programs.steam.extraCompatPackages = [ pkgs.proton-cachyos ];
+  programs = {
+    steam = {
+      enable = true;
+      extraCompatPackages = [
+        pkgs.proton-cachyos
+        # or, on a modern CPU:
+        # pkgs.proton-cachyos-v3
+      ];
+    };
+  };
+}
 ```
 
-The overlay also provides `pkgs.proton-cachyos-versions`, which holds every pinned release for your system,
-keyed by version: `pkgs.proton-cachyos-versions."10.0-sunset-slr".proton-cachyos-v3`. See
-[Pinning an older release](#pinning-an-older-release).
+The overlay adds these attributes to `pkgs`:
+
+| Attribute                      | What it is                                                                                                |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| `pkgs.proton-cachyos`          | The generic build of the newest release, for your architecture (x86_64 or ARM).                          |
+| `pkgs.proton-cachyos-v3`       | The x86-64-v3 build of the newest release. x86_64 only. `-v2` and `-v4` appear too if the release has them. |
+| `pkgs.proton-cachyos-versions` | Every release for your system, keyed by version. See [Pinning an older release](#pinning-an-older-release). |
+
+For example, `pkgs.proton-cachyos-versions."10.0-sunset-slr".proton-cachyos-v3` is the same package as
+the `legacyPackages` example in that section.
+
+The overlay builds the packages with your own nixpkgs rather than this flake's. With
+`inputs.nixpkgs.follows = "nixpkgs"`, as in the `flake.nix` above, the two are the same anyway.
 
 ## Installation on other Linux distributions
 
@@ -120,17 +153,20 @@ Enable flakes if you haven't already, by adding this to `~/.config/nix/nix.conf`
 experimental-features = nix-command flakes
 ```
 
-Then build the package. `--no-link` avoids creating a `result` symlink, and `--print-out-paths` prints
-the path to the tool:
+Then build the package straight into Steam's compatibility tools folder. `--out-link` creates a link
+there and also registers it with Nix, so garbage collection won't delete the tool:
 
-```fish
-set tool (nix build --no-link --print-out-paths github:gravesxe/proton-cachyos-flake#proton-cachyos.steamcompattool)
+```sh
 mkdir -p ~/.local/share/Steam/compatibilitytools.d
-ln -sfn $tool ~/.local/share/Steam/compatibilitytools.d/proton-cachyos
+nix build --out-link ~/.local/share/Steam/compatibilitytools.d/proton-cachyos \
+  github:gravesxe/proton-cachyos-flake#proton-cachyos.steamcompattool
 ```
 
-On a CPU with x86-64-v3 support, use `proton-cachyos-v3` instead of `proton-cachyos` in both commands,
-for example `#proton-cachyos-v3.steamcompattool` and `.../proton-cachyos-v3`. The v3 build installs as
+Nix adds the output name to the link, so it is created as `proton-cachyos-steamcompattool`. Steam
+reads the tool's name from inside it, so that doesn't matter.
+
+On a CPU with x86-64-v3 support, use `proton-cachyos-v3` instead of `proton-cachyos` in both places:
+`--out-link .../proton-cachyos-v3` and `#proton-cachyos-v3.steamcompattool`. The v3 build installs as
 its own tool, so you can have both side by side.
 
 Steam only reads `compatibilitytools.d` at startup, so fully restart Steam afterwards. `proton-cachyos`
@@ -139,7 +175,8 @@ then appears in the compatibility dropdown, as described in [Using it in Steam](
 Things to be aware of:
 
 - **Updating.** The link points at the build you made, so it doesn't change on its own. Run the same
-  two commands again to pick up a newer release. Nix fetches the latest version of this flake each time.
+  command again, with `--refresh` added so Nix doesn't reuse a cached copy of the flake, to pick up a
+  newer release.
 - **Steam from Flatpak.** A Flatpak Steam can't see `/nix/store` unless it is given access. Either
   install Steam natively, or override the Flatpak's permissions (for example with
   `flatpak override --user --filesystem=/nix/store com.valvesoftware.Steam`) and link into
@@ -161,7 +198,17 @@ programs.steam.extraCompatPackages = [
 
 A pinned release keeps CachyOS's own versioned name in Steam (for example
 `proton-cachyos-10.0-sunset-slr-x86_64_v3`), so it sits next to the auto-updating one rather than
-replacing it. Each release only offers the builds CachyOS made for it. Some 10.0 releases have `-v2`
+replacing it.
+
+On other distributions, build a pinned release the same way as in
+[the install steps](#installation-on-other-linux-distributions), using its `legacyPackages` path:
+
+```sh
+nix build --out-link ~/.local/share/Steam/compatibilitytools.d/proton-cachyos-10.0-sunset-slr-v3 \
+  'github:gravesxe/proton-cachyos-flake#legacyPackages.x86_64-linux.versions."10.0-sunset-slr".proton-cachyos-v3.steamcompattool'
+```
+
+Each release only offers the builds CachyOS made for it. Some 10.0 releases have `-v2`
 and `-v4`, and releases before 2026 have no ARM build. To list them:
 
 ```fish
@@ -182,7 +229,9 @@ Occasionally a major Proton bump needs a fresh prefix. If a game misbehaves afte
 
 ## Getting updates
 
-Updates arrive as ordinary commits to this repository, so they reach you like any other flake input:
+Updates arrive as ordinary commits to this repository, so they reach you like any other flake input.
+(On other distributions, see the update note under
+[Installation on other Linux distributions](#installation-on-other-linux-distributions).)
 
 ```fish
 nix flake update proton-cachyos     # just this input
@@ -253,11 +302,13 @@ cat result/compatibilitytool.vdf   # tool names should read "proton-cachyos-v3"
 
 ## Troubleshooting
 
-- **The tool doesn't appear in Steam.** Restart Steam completely, and check that you rebuilt after
-  adding it to `extraCompatPackages`.
+- **The tool doesn't appear in Steam.** Restart Steam completely. On NixOS, check that you rebuilt
+  after adding it to `extraCompatPackages`. On other distributions, check that the link exists in
+  `compatibilitytools.d` and isn't broken.
 - **`hash mismatch` during a build.** `sources.json` and the upstream file disagree, usually because
-  CachyOS re-uploaded an asset. Run `./scripts/update.sh`, or open an issue if you're on the latest
-  commit.
+  CachyOS re-uploaded an asset. Update the flake input (see [Getting updates](#getting-updates)), as
+  the auto-update may already have fixed it. If it still fails on the latest commit, open an issue. In
+  a local checkout, `./scripts/update.sh` refreshes the hashes.
 - **`release '…' has no '…' build`.** That release doesn't include that CPU build. The error lists
   the builds it does have.
 - **The game runs worse than with another Proton.** Try `proton-cachyos` instead of the v3 build, or
